@@ -1,9 +1,10 @@
 package ru.omsu.proctoring
 
 import android.content.Context
+import android.content.Intent
+import android.media.projection.MediaProjection
 import org.webrtc.*
-import org.webrtc.voiceengine.WebRtcAudioRecord
-import java.lang.IllegalStateException
+
 
 class WebRtcClient(
     private val appContext: Context,
@@ -13,18 +14,22 @@ class WebRtcClient(
         const val WIDTH = 320
         const val HEIGHT = 240
         const val FPS = 60
-        const val VIDEO_ID = "local_video"
-        const val STREAM_ID = "local_video"
+        const val SCREEN_ID = "local_screen_video"
+        const val CAMERA_VIDEO_ID = "local_camera_video"
+        const val STREAM_ID = "local_stream"
     }
 
     private val eglBase = EglBase.create()
     private val factory: PeerConnectionFactory
     private val connection: PeerConnection
+    private  val localStream: MediaStream
 
     init {
         initFactoryOptions()
         factory = createFactory()
         connection = createPeerConnection(factory)
+        localStream = factory.createLocalMediaStream(STREAM_ID)
+        connection.addStream(localStream)
     }
 
     fun initSurface(surface: SurfaceViewRenderer) = with(surface) {
@@ -33,18 +38,27 @@ class WebRtcClient(
         init(eglBase.eglBaseContext, null)
     }
 
-    fun startCapturing(surface: SurfaceViewRenderer) {
+    fun startCapturingVideo(surface: SurfaceViewRenderer) {
         val localVideoSource = factory.createVideoSource(false)
         val surfaceHelper =
             SurfaceTextureHelper.create(Thread.currentThread().name, eglBase.eglBaseContext)
         val capturer = getLocalCameraCapturer()
         capturer.initialize(surfaceHelper, surface.context, localVideoSource.capturerObserver)
         capturer.startCapture(WIDTH, HEIGHT, FPS)
-        val localVideoTrack = factory.createVideoTrack(VIDEO_ID, localVideoSource)
+        val localVideoTrack = factory.createVideoTrack(CAMERA_VIDEO_ID, localVideoSource)
         localVideoTrack.addSink(surface)
-        val localStream = factory.createLocalMediaStream(STREAM_ID)
         localStream.addTrack(localVideoTrack)
-        connection.addStream(localStream)
+    }
+
+    fun startCapturingScreen(context: Context, permissionData: Intent) {
+        val localVideoSource = factory.createVideoSource(true)
+        val surfaceHelper =
+            SurfaceTextureHelper.create(Thread.currentThread().name, eglBase.eglBaseContext)
+        val capturer = ScreenCapturerAndroid(permissionData, object : MediaProjection.Callback() {})
+        capturer.initialize(surfaceHelper, context, localVideoSource.capturerObserver)
+        capturer.startCapture(WIDTH, HEIGHT, FPS)
+        val localVideoTrack = factory.createVideoTrack(SCREEN_ID, localVideoSource)
+        localStream.addTrack(localVideoTrack)
     }
 
     fun call(sdpObserver: SdpObserver) {

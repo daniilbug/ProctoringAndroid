@@ -1,5 +1,10 @@
 package ru.omsu.proctoring
 
+import android.R.attr.start
+import android.annotation.TargetApi
+import android.content.Context
+import android.content.Intent
+import android.media.projection.MediaProjectionManager
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
 import io.ktor.util.KtorExperimentalAPI
@@ -9,11 +14,15 @@ import org.webrtc.IceCandidate
 import org.webrtc.MediaStream
 import org.webrtc.SdpObserver
 import org.webrtc.SessionDescription
-import java.lang.IllegalStateException
+
 
 @ExperimentalCoroutinesApi
 @KtorExperimentalAPI
 class MainActivity : AppCompatActivity(), SignallingClientListener {
+
+    companion object {
+        const val CAPTURE_PERMISSION_REQUEST_CODE = 1
+    }
 
     private lateinit var sdpObserver: SdpObserver
     private lateinit var signaling: SignallingClient
@@ -44,9 +53,9 @@ class MainActivity : AppCompatActivity(), SignallingClientListener {
         })
         webRtcClient.initSurface(localCameraSurface)
         webRtcClient.initSurface(remoteCameraSurface)
-        webRtcClient.startCapturing(localCameraSurface)
+        webRtcClient.startCapturingVideo(localCameraSurface)
         localCameraSurface.setOnClickListener {
-            webRtcClient.call(sdpObserver)
+            startScreenCapture()
         }
     }
 
@@ -68,5 +77,23 @@ class MainActivity : AppCompatActivity(), SignallingClientListener {
     override fun onDestroy() {
         signaling.destroy()
         super.onDestroy()
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == CAPTURE_PERMISSION_REQUEST_CODE && data != null) {
+            webRtcClient.startCapturingScreen(this, data)
+            webRtcClient.call(sdpObserver)
+        }
+    }
+
+    @TargetApi(21)
+    private fun startScreenCapture() {
+        val mMediaProjectionManager =
+            application.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+        startActivityForResult(
+            mMediaProjectionManager.createScreenCaptureIntent(),
+            CAPTURE_PERMISSION_REQUEST_CODE
+        )
     }
 }

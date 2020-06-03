@@ -91,7 +91,7 @@ class SignallingClient(
     }
 
     private fun createIce(jsonObject: JsonObject): IceCandidate {
-        val sdp = jsonObject.get("candidate")
+        val sdp = jsonObject.get("sdp")
         val sdpMid = jsonObject.get("sdpMid")
         val sdpMLineIndex = jsonObject.get("sdpMLineIndex")
         return IceCandidate(sdpMid.asString, sdpMLineIndex.asInt, sdp.asString)
