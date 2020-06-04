@@ -22,25 +22,50 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.webrtc.IceCandidate
 import org.webrtc.SessionDescription
-import java.util.*
 
 @ExperimentalCoroutinesApi
 @KtorExperimentalAPI
 class SignallingClient(
-    private val serverAddress: String,
-    private val listener: SignallingClientListener
+    private val serverAddress: String
 ) : CoroutineScope {
 
+    enum class MessageAction {
+        ICE_CANDIDATE,
+        JOIN,
+        CREATE_ANSWER,
+        CREATE_OFFER,
+        SESSION_DESCRIPTION,
+        REMOVE,
+        EXIT
+    }
+
+    data class Message(val action: MessageAction, val from: String? = null, val to: String? = null, val text: String = "")
+
+    private var listener: SignallingClientListener? = null
     private val job = Job()
     private val gson = Gson()
     override val coroutineContext = Dispatchers.IO + job
 
-    fun sendDescription(sessionDescription: SessionDescription) = runBlocking {
-        sendChannel.send(gson.toJson(sessionDescription))
+    fun setMessageListener(listener: SignallingClientListener) {
+        this.listener = listener
     }
 
-    fun sendCandidate(iceCandidate: IceCandidate) = runBlocking {
-        sendChannel.send(gson.toJson(iceCandidate))
+    fun sendExit(local: String) = runBlocking {
+        sendChannel.send(gson.toJson(Message(MessageAction.EXIT, local, null)))
+    }
+
+    fun sendDescription(toId: String, local: String, sessionDescription: SessionDescription) = runBlocking {
+        val text = gson.toJson(sessionDescription)
+        sendChannel.send(gson.toJson(Message(MessageAction.SESSION_DESCRIPTION, local, toId, text)))
+    }
+
+    fun sendCandidate(toId: String, local: String, iceCandidate: IceCandidate) = runBlocking {
+        val text = gson.toJson(iceCandidate)
+        sendChannel.send(gson.toJson(Message(MessageAction.ICE_CANDIDATE, local, toId, text)))
+    }
+
+    fun sendJoin(local: String) = runBlocking {
+        sendChannel.send(gson.toJson(Message(MessageAction.JOIN, local, null)))
     }
 
     fun destroy() {
@@ -63,7 +88,7 @@ class SignallingClient(
 
     private fun connect() = launch {
         client.ws(host = serverAddress, port = 8080, path = "/connect") {
-            listener.onConnectionEstablished()
+            listener?.onConnectionEstablished()
             val sendData = sendChannel.openSubscription()
             while (true) {
                 sendData.poll()?.let {
@@ -74,15 +99,9 @@ class SignallingClient(
                     if (frame is Frame.Text) {
                         val data = frame.readText()
                         Log.v(this@SignallingClient.javaClass.simpleName, "Received: $data")
-                        val jsonObject = gson.fromJson(data, JsonObject::class.java)
+                        val message = gson.fromJson(data, Message::class.java) ?: return@let
                         withContext(Dispatchers.Main) {
-                            if (jsonObject.has("candidate")) {
-                                listener.onIceCandidateReceived(createIce(jsonObject))
-                            } else if (jsonObject.has("type") && jsonObject["type"].asString.toUpperCase(Locale.ROOT) == "OFFER") {
-                                listener.onOfferReceived(createSession(jsonObject))
-                            } else if (jsonObject.has("type") && jsonObject["type"].asString.toUpperCase(Locale.ROOT) == "ANSWER") {
-                                listener.onAnswerReceived(createSession(jsonObject))
-                            }
+                            processMessage(message)
                         }
                     }
                 }
@@ -90,7 +109,51 @@ class SignallingClient(
         }
     }
 
-    private fun createIce(jsonObject: JsonObject): IceCandidate {
+    private fun processMessage(message: Message) {
+        when(message.action) {
+            MessageAction.CREATE_ANSWER -> onCreateAnswer(message)
+            MessageAction.SESSION_DESCRIPTION -> onSessionDescription(message)
+            MessageAction.REMOVE -> onRemove(message)
+            MessageAction.CREATE_OFFER -> onCreateOffer(message)
+            MessageAction.ICE_CANDIDATE -> onIceCandidate(message)
+            else -> error("Unknown message action for getting as a client")
+        }
+    }
+
+    private fun onIceCandidate(message: Message) {
+        val from = message.from ?: return
+        val to = message.to ?: return
+        val candidate = createCandidate(gson.fromJson(message.text, JsonObject::class.java))
+        listener?.onIceCandidateReceived(from, getLocalFromId(to), candidate)
+    }
+
+    private fun onCreateOffer(message: Message) {
+        val from = message.from ?: return
+        val to = message.to ?: return
+        listener?.onCreateOfferRequest(from, getLocalFromId(to))
+    }
+
+    private fun onRemove(message: Message) {
+        val from = message.from ?: return
+        val to = message.to ?: return
+        listener?.onRemove(from, getLocalFromId(to))
+    }
+
+    private fun onSessionDescription(message: Message) {
+        val from = message.from ?: return
+        val to = message.to ?: return
+        val description = createSession(gson.fromJson(message.text, JsonObject::class.java))
+        listener?.onSetRemoteSession(from, getLocalFromId(to), description)
+    }
+
+    private fun onCreateAnswer(message: Message) {
+        val from = message.from ?: return
+        val to = message.to ?: return
+        val description = createSession(gson.fromJson(message.text, JsonObject::class.java))
+        listener?.onCreateAnswerRequest(from, getLocalFromId(to), description)
+    }
+
+    private fun createCandidate(jsonObject: JsonObject): IceCandidate {
         val sdp = jsonObject.get("sdp")
         val sdpMid = jsonObject.get("sdpMid")
         val sdpMLineIndex = jsonObject.get("sdpMLineIndex")
@@ -104,5 +167,9 @@ class SignallingClient(
             else -> error("Something went wrong with session type detection")
         }
         return SessionDescription(type, json["description"].asString)
+    }
+
+    private fun getLocalFromId(id: String): String {
+        return if (":" in id) id.split(":")[1] else id
     }
 }

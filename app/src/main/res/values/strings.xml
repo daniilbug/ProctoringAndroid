@@ -1,3 +1,7 @@
 <resources>
     <string name="app_name">Proctoring</string>
+    <string name="startScreenSharing">Start Screen Sharing</string>
+    <string name="stopScreenSharing">Stop Screen Sharing</string>
+    <string name="startCameraStream">Start Camera Stream</string>
+    <string name="stopCameraStream">Stop Camera Stream</string>
 </resources>
