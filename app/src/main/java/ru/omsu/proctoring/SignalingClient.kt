@@ -39,7 +39,12 @@ class SignallingClient(
         EXIT
     }
 
-    data class Message(val action: MessageAction, val from: String? = null, val to: String? = null, val text: String = "")
+    data class Message(
+        val action: MessageAction,
+        val from: String? = null,
+        val to: String? = null,
+        val text: String = ""
+    )
 
     private var listener: SignallingClientListener? = null
     private val job = Job()
@@ -60,8 +65,9 @@ class SignallingClient(
     }
 
     fun sendCandidate(toId: String, local: String, iceCandidate: IceCandidate) = runBlocking {
-        val text = gson.toJson(iceCandidate)
-        sendChannel.send(gson.toJson(Message(MessageAction.ICE_CANDIDATE, local, toId, text)))
+        val messageText = gson.toJson(iceCandidate)
+        val message = Message(MessageAction.ICE_CANDIDATE, local, toId, messageText)
+        sendChannel.send(gson.toJson(message))
     }
 
     fun sendJoin(local: String) = runBlocking {

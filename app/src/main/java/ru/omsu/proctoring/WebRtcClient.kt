@@ -108,7 +108,7 @@ class WebRtcClient(
         init(eglBase.eglBaseContext, null)
     }
 
-    fun startCapturingVideo(surface: SurfaceViewRenderer) {
+    private fun startCapturingVideo(surface: SurfaceViewRenderer) {
         val localVideoSource = factory.createVideoSource(false)
         val surfaceHelper =
             SurfaceTextureHelper.create(Thread.currentThread().name, eglBase.eglBaseContext)
@@ -122,7 +122,7 @@ class WebRtcClient(
         localCameraStream.addTrack(localVideoTrack)
     }
 
-    fun startCapturingScreen(context: Context, permissionData: Intent) {
+    private fun startCapturingScreen(context: Context, permissionData: Intent) {
         val localVideoSource = factory.createVideoSource(true)
         val surfaceHelper =
             SurfaceTextureHelper.create(Thread.currentThread().name, eglBase.eglBaseContext)
@@ -204,12 +204,12 @@ class WebRtcClient(
 
     private fun answer(id: String, localId: String, sessionDescription: SessionDescription) {
         val connection = createPeerConnection(id, localId, factory)
-        onRemoteSessionDescription(id, localId, sessionDescription)
-        connection.answer(id, localId)
         if (connections[localId] == null) {
             connections[localId] = mutableMapOf()
         }
         connections[localId]?.set(id, connection)
+        onRemoteSessionDescription(id, localId, sessionDescription)
+        connection.answer(id, localId)
         when(localId) {
             CAMERA_LOCAL_ID -> { stateListener.onStartCameraStream() }
             SCREEN_LOCAL_ID -> { stateListener.onStartScreenStream() }
@@ -231,7 +231,7 @@ class WebRtcClient(
         }, constraints)
     }
 
-    private fun PeerConnection.answer(localId: String, toId: String) {
+    private fun PeerConnection.answer(toId: String, localId: String) {
         val constraints = MediaConstraints().apply {
             mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveVideo", "true"))
             optional.add(MediaConstraints.KeyValuePair("DtlsSrtpKeyAgreement", "true"))
