@@ -191,11 +191,11 @@ class WebRtcClient(
 
     private fun offer(id: String, localId: String) {
         val connection = createPeerConnection(id, localId, factory)
-        connection.offer(id, localId)
         if (connections[localId] == null) {
             connections[localId] = mutableMapOf()
         }
         connections[localId]?.set(id, connection)
+        connection.offer(id, localId)
         when(localId) {
             CAMERA_LOCAL_ID -> stateListener.onStartCameraStream()
             SCREEN_LOCAL_ID -> stateListener.onStartScreenStream()

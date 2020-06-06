@@ -12,17 +12,16 @@ import io.ktor.client.features.websocket.ws
 import io.ktor.http.cio.websocket.Frame
 import io.ktor.http.cio.websocket.readText
 import io.ktor.util.KtorExperimentalAPI
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.Job
+import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.BroadcastChannel
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ConflatedBroadcastChannel
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.*
 import org.webrtc.IceCandidate
 import org.webrtc.SessionDescription
 
+@InternalCoroutinesApi
+@FlowPreview
 @ExperimentalCoroutinesApi
 @KtorExperimentalAPI
 class SignallingClient(
@@ -51,6 +50,19 @@ class SignallingClient(
     private val gson = Gson()
     override val coroutineContext = Dispatchers.IO + job
 
+    private val client = HttpClient(CIO) {
+        install(WebSockets)
+        install(JsonFeature) {
+            serializer = GsonSerializer()
+        }
+    }
+
+    private val sendChannel = BroadcastChannel<String>(128)
+
+    init {
+        connect()
+    }
+
     fun setMessageListener(listener: SignallingClientListener) {
         this.listener = listener
     }
@@ -59,10 +71,12 @@ class SignallingClient(
         sendChannel.send(gson.toJson(Message(MessageAction.EXIT, local, null)))
     }
 
-    fun sendDescription(toId: String, local: String, sessionDescription: SessionDescription) = runBlocking {
-        val text = gson.toJson(sessionDescription)
-        sendChannel.send(gson.toJson(Message(MessageAction.SESSION_DESCRIPTION, local, toId, text)))
-    }
+    fun sendDescription(toId: String, local: String, sessionDescription: SessionDescription) =
+        runBlocking {
+            val text = gson.toJson(sessionDescription)
+            val message = Message(MessageAction.SESSION_DESCRIPTION, local, toId, text)
+            sendChannel.send(gson.toJson(message))
+        }
 
     fun sendCandidate(toId: String, local: String, iceCandidate: IceCandidate) = runBlocking {
         val messageText = gson.toJson(iceCandidate)
@@ -79,36 +93,22 @@ class SignallingClient(
         job.complete()
     }
 
-    private val client = HttpClient(CIO) {
-        install(WebSockets)
-        install(JsonFeature) {
-            serializer = GsonSerializer()
-        }
-    }
-
-    private val sendChannel = ConflatedBroadcastChannel<String>()
-
-    init {
-        connect()
-    }
-
     private fun connect() = launch {
         client.ws(host = serverAddress, port = 8080, path = "/connect") {
             listener?.onConnectionEstablished()
-            val sendData = sendChannel.openSubscription()
-            while (true) {
-                sendData.poll()?.let {
-                    Log.v(this@SignallingClient.javaClass.simpleName, "Sending: $it")
-                    outgoing.send(Frame.Text(it))
+            launch {
+                sendChannel.asFlow().collect { sent ->
+                    outgoing.send(Frame.Text(sent))
+                    Log.v(this@SignallingClient.javaClass.simpleName, "Sending: $sent")
                 }
-                incoming.poll()?.let { frame ->
-                    if (frame is Frame.Text) {
-                        val data = frame.readText()
-                        Log.v(this@SignallingClient.javaClass.simpleName, "Received: $data")
-                        val message = gson.fromJson(data, Message::class.java) ?: return@let
-                        withContext(Dispatchers.Main) {
-                            processMessage(message)
-                        }
+            }
+            incoming.consumeAsFlow().collect { frame ->
+                if (frame is Frame.Text) {
+                    val data = frame.readText()
+                    Log.v(this@SignallingClient.javaClass.simpleName, "Received: $data")
+                    val message = gson.fromJson(data, Message::class.java) ?: return@collect
+                    withContext(Dispatchers.Main) {
+                        processMessage(message)
                     }
                 }
             }
@@ -116,7 +116,7 @@ class SignallingClient(
     }
 
     private fun processMessage(message: Message) {
-        when(message.action) {
+        when (message.action) {
             MessageAction.CREATE_ANSWER -> onCreateAnswer(message)
             MessageAction.SESSION_DESCRIPTION -> onSessionDescription(message)
             MessageAction.REMOVE -> onRemove(message)
@@ -167,7 +167,7 @@ class SignallingClient(
     }
 
     private fun createSession(json: JsonObject): SessionDescription {
-        val type = when(json["type"].asString) {
+        val type = when (json["type"].asString) {
             "offer" -> SessionDescription.Type.OFFER
             "answer" -> SessionDescription.Type.ANSWER
             else -> error("Something went wrong with session type detection")
