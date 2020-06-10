@@ -5,9 +5,13 @@ import android.content.Intent
 import android.media.projection.MediaProjection
 import io.ktor.util.KtorExperimentalAPI
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.InternalCoroutinesApi
 import org.webrtc.*
 
 
+@FlowPreview
+@InternalCoroutinesApi
 @KtorExperimentalAPI
 @ExperimentalCoroutinesApi
 class WebRtcClient(
@@ -19,7 +23,7 @@ class WebRtcClient(
     companion object {
         const val WIDTH = 320
         const val HEIGHT = 240
-        const val FPS = 60
+        const val FPS = 15
         const val SCREEN_ID = "local_screen_video"
         const val CAMERA_VIDEO_ID = "local_camera_video"
         const val CAMERA_STREAM_ID = "local_stream_camera"

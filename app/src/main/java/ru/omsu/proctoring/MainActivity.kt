@@ -9,9 +9,13 @@ import androidx.appcompat.app.AppCompatActivity
 import io.ktor.util.KtorExperimentalAPI
 import kotlinx.android.synthetic.main.activity_main.*
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.InternalCoroutinesApi
 import kotlin.math.sign
 
 
+@FlowPreview
+@InternalCoroutinesApi
 @ExperimentalCoroutinesApi
 @KtorExperimentalAPI
 class MainActivity : AppCompatActivity(), WebRtcStreamingStateListener {
@@ -30,7 +34,7 @@ class MainActivity : AppCompatActivity(), WebRtcStreamingStateListener {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
-        signaling = SignallingClient("192.168.1.72")
+        signaling = SignallingClient("109.120.19.16")//"192.168.1.72")
         webRtcClient = WebRtcClient(application, signaling, this)
         signaling.setMessageListener(webRtcClient)
 
